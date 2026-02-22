@@ -92,3 +92,6 @@ services:
       - 23001:3001
     restart: always
 ```
+
+## Preview
+![](file-share-homepage.jpg)
