@@ -21,7 +21,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { QRCodeDialog } from '@/components/QRCodeDialog';
 import { getFile, getPreviewUrl, createWebSocketConnection, subscribeToFile, unsubscribeFromFile, downloadFile, deleteFile, getTextContent, isTextFile, TEXT_PREVIEW_MAX_SIZE } from '@/lib/api';
-import type { FileInfo, WebSocketMessage } from '@/lib/api';
+import type { FileInfo, WebSocketMessage, WebSocketWithReconnect } from '@/lib/api';
 import { formatFileSize, formatDate, formatTimeRemaining, getFileIcon } from '@/lib/utils';
 
 function getFileIconComponent(mimeType: string) {
@@ -53,7 +53,7 @@ export function FileInfoPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [qrCodeOpen, setQrCodeOpen] = useState(false);
-  const wsRef = useRef<WebSocket | null>(null);
+  const wsRef = useRef<WebSocketWithReconnect | null>(null);
   
   // 文本预览相关状态
   const [textContent, setTextContent] = useState<string | null>(null);

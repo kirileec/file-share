@@ -301,13 +301,13 @@ export function createWebSocketConnection(
   };
 }
 
-export function subscribeToFile(ws: WebSocket, code: string) {
+export function subscribeToFile(ws: WebSocketWithReconnect | WebSocket, code: string) {
   if (ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({ type: 'subscribe', code }));
   }
 }
 
-export function unsubscribeFromFile(ws: WebSocket, code: string) {
+export function unsubscribeFromFile(ws: WebSocketWithReconnect | WebSocket, code: string) {
   if (ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({ type: 'unsubscribe', code }));
   }

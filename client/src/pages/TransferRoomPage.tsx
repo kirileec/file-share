@@ -15,13 +15,11 @@ import {
 import type {
   SessionDetail,
   SessionMessage,
-  SessionUser,
   ExtendedWebSocketMessage,
   WebSocketWithReconnect
 } from '../lib/api'
 import { Button } from '../components/ui/button'
 import { Card, CardContent } from '../components/ui/card'
-import { Input } from '../components/ui/input'
 import { MarkdownRenderer } from '../components/transfer/MarkdownRenderer'
 import { isMobile, getBrowserId, generateUserId } from '../lib/utils'
 
@@ -41,7 +39,7 @@ export function TransferRoomPage() {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const wsRef = useRef<WebSocketWithReconnect | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const heartbeatRef = useRef<NodeJS.Timeout | null>(null)
+  const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   // 初始化时计算用户ID
   useEffect(() => {
@@ -304,7 +302,7 @@ export function TransferRoomPage() {
     )
   }
 
-  const renderMessage = (msg: SessionMessage, users: SessionUser[]) => {
+  const renderMessage = (msg: SessionMessage) => {
     // 使用 hash 后的 userId 判断是否为自己发送的消息
     const isSelf = msg.senderId === myUserId
     
@@ -479,7 +477,7 @@ export function TransferRoomPage() {
               </div>
             ) : (
               <>
-                {session.messages.map(msg => renderMessage(msg, session.users))}
+                {session.messages.map(msg => renderMessage(msg))}
                 <div ref={messagesEndRef} />
               </>
             )}
