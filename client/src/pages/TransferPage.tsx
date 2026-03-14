@@ -132,7 +132,7 @@ export function TransferPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background via-card to-background">
+    <div className="min-h-screen bg-linear-to-br from-background via-card to-background">
       <div className="container mx-auto py-8 px-4 max-w-4xl">
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
