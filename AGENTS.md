@@ -70,7 +70,7 @@ file-share/
 cd server && npm install
 cd ../client && npm install
 
-# 启动后端（端口 3001）
+# 启动后端（端口 8989
 cd server && npm run dev
 
 # 启动前端（端口 5173）
@@ -94,7 +94,7 @@ cd server && npm start
 docker build -t file-share .
 
 # 运行容器
-docker run -p 23001:3001 file-share
+docker run -p 23001:8989 file-share
 
 # 或使用 docker-compose
 # docker-compose up -d
@@ -185,4 +185,4 @@ docker run -p 23001:3001 file-share
 - 文件上传限制：200MB（在 Multer 配置中设置）
 - 生产环境需要确保 `server/uploads/` 目录存在且有写入权限
 - 时区设置：Dockerfile 中设置为 Asia/Shanghai
-- 默认端口：前端 5173，后端 3001
+- 默认端口：前端 5173，后端 8989

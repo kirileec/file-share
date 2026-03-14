@@ -28,21 +28,21 @@ function getFileIconComponent(mimeType: string) {
   const iconType = getFileIcon(mimeType);
   switch (iconType) {
     case 'image':
-      return <Image className="h-16 w-16 text-blue-500" />;
+      return <Image className="h-16 w-16" style={{ color: 'var(--chart-1)' }} />;
     case 'video':
-      return <Video className="h-16 w-16 text-purple-500" />;
+      return <Video className="h-16 w-16" style={{ color: 'var(--chart-2)' }} />;
     case 'audio':
-      return <Music className="h-16 w-16 text-green-500" />;
+      return <Music className="h-16 w-16" style={{ color: 'var(--chart-3)' }} />;
     case 'pdf':
-      return <FileText className="h-16 w-16 text-red-500" />;
+      return <FileText className="h-16 w-16" style={{ color: 'var(--destructive)' }} />;
     case 'document':
-      return <FileText className="h-16 w-16 text-blue-600" />;
+      return <FileText className="h-16 w-16" style={{ color: 'var(--chart-1)' }} />;
     case 'spreadsheet':
-      return <FileSpreadsheet className="h-16 w-16 text-green-600" />;
+      return <FileSpreadsheet className="h-16 w-16" style={{ color: 'var(--chart-3)' }} />;
     case 'archive':
-      return <Archive className="h-16 w-16 text-yellow-600" />;
+      return <Archive className="h-16 w-16" style={{ color: 'var(--chart-5)' }} />;
     default:
-      return <File className="h-16 w-16 text-gray-500" />;
+      return <File className="h-16 w-16 text-muted-foreground" />;
   }
 }
 
@@ -278,7 +278,7 @@ export function FileInfoPage() {
               </div>
               <div className="p-3 bg-muted rounded-lg">
                 <p className="text-muted-foreground">过期时间</p>
-                <p className="font-medium text-orange-500">{formatTimeRemaining(fileInfo.expiresAt)}</p>
+                <p className="font-medium text-primary">{formatTimeRemaining(fileInfo.expiresAt)}</p>
               </div>
             </div>
 

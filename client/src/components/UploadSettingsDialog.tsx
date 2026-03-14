@@ -65,7 +65,7 @@ export function UploadSettingsDialog({ open, onClose, code, onConfirm, onNavigat
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md bg-white">
         <DialogHeader>
           <DialogTitle>上传成功</DialogTitle>
         </DialogHeader>

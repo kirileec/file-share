@@ -6,17 +6,117 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { createServer } from 'http';
 import { WebSocketServer } from 'ws';
+import crypto from 'crypto';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 8989;
 const server = createServer(app);
 const wss = new WebSocketServer({ server });
 
-// 存储所有WebSocket连接，以及它们订阅的文件code
-const wsClients = new Map(); // ws -> Set of subscribed codes
+// 存储所有WebSocket连接，以及它们订阅的文件code和session
+const wsClients = new Map(); // ws -> { fileCodes: Set<string>, sessionId: string | null, userId: string }
+
+// ==================== 传输助手 Session 存储 ====================
+// Session 存储: sessionId -> Session
+const sessionStore = new Map();
+
+// Session 数据结构:
+// {
+//   id: string;           // 8位随机字符串
+//   name: string;         // session 名称
+//   createdBy: string;    // 创建者的 browserId
+//   createdAt: number;    // 创建时间戳
+//   users: Map<string, { id: string, nickname: string, joinedAt: number, lastSeen: number }>;
+//   messages: Array;      // 消息列表
+//   closeTimer: null | Timeout; // 自动关闭计时器
+// }
+
+// 生成8位随机字符串作为 Session ID
+function generateSessionId() {
+  let id;
+  do {
+    id = crypto.randomBytes(4).toString('hex'); // 8位十六进制字符
+  } while (sessionStore.has(id));
+  return id;
+}
+
+// 广播 Session 列表更新
+function broadcastSessionsUpdate() {
+  const message = JSON.stringify({ type: 'sessions-updated' });
+  wsClients.forEach((_, client) => {
+    if (client.readyState === 1) {
+      client.send(message);
+    }
+  });
+}
+
+// 广播 Session 内消息
+function broadcastToSession(sessionId, message) {
+  wsClients.forEach((data, client) => {
+    if (client.readyState === 1 && data.sessionId === sessionId) {
+      client.send(JSON.stringify(message));
+    }
+  });
+}
+
+// 获取公开的 Session 信息（用于列表展示）
+function getPublicSessionInfo(session) {
+  return {
+    id: session.id,
+    name: session.name,
+    userCount: session.users.size,
+    createdAt: session.createdAt,
+    closeAt: session.closeAt || null
+  };
+}
+
+// 获取 Session 详情（用于聊天室内）
+function getSessionDetail(session, currentUserId) {
+  return {
+    id: session.id,
+    name: session.name,
+    users: Array.from(session.users.entries()).map(([id, user]) => ({
+      id,
+      nickname: user.nickname,
+      isSelf: id === currentUserId
+    })),
+    messages: session.messages.slice(-100), // 最近100条消息
+    createdAt: session.createdAt
+  };
+}
+
+// 启动 Session 自动关闭计时器
+function scheduleSessionClose(sessionId) {
+  const session = sessionStore.get(sessionId);
+  if (!session || session.closeTimer) return;
+  
+  // 设置关闭时间（60秒后）
+  session.closeAt = Date.now() + 60000;
+  
+  session.closeTimer = setTimeout(() => {
+    const currentSession = sessionStore.get(sessionId);
+    if (currentSession && currentSession.users.size === 0) {
+      // 广播 session 关闭
+      broadcastToSession(sessionId, { type: 'session-closed', sessionId });
+      sessionStore.delete(sessionId);
+      broadcastSessionsUpdate();
+      console.log(`Session ${sessionId} auto-closed after 1 minute of inactivity`);
+    }
+  }, 60000); // 1分钟
+}
+
+// 取消 Session 自动关闭计时器
+function cancelSessionClose(sessionId) {
+  const session = sessionStore.get(sessionId);
+  if (session && session.closeTimer) {
+    clearTimeout(session.closeTimer);
+    session.closeTimer = null;
+    session.closeAt = null;
+  }
+}
 
 // 广播文件列表更新
 function broadcastFilesUpdate() {
@@ -35,8 +135,8 @@ function broadcastFileUpdate(code, fileInfo) {
     code,
     fileInfo: fileInfo ? getPublicFileInfo(fileInfo) : null
   });
-  wsClients.forEach((subscribedCodes, client) => {
-    if (client.readyState === 1 && subscribedCodes.has(code)) {
+  wsClients.forEach((data, client) => {
+    if (client.readyState === 1 && data.fileCodes.has(code)) {
       client.send(message);
     }
   });
@@ -60,22 +160,54 @@ function checkExpiringFiles() {
 setInterval(checkExpiringFiles, 10000);
 
 wss.on('connection', (ws) => {
-  wsClients.set(ws, new Set());
+  wsClients.set(ws, { fileCodes: new Set(), sessionId: null, userId: null });
   console.log('WebSocket client connected, total:', wsClients.size);
   
   ws.on('message', (data) => {
     try {
       const message = JSON.parse(data.toString());
+      
+      // 文件订阅相关
       if (message.type === 'subscribe' && message.code) {
-        const subscribedCodes = wsClients.get(ws);
-        if (subscribedCodes) {
-          subscribedCodes.add(message.code);
+        const clientData = wsClients.get(ws);
+        if (clientData) {
+          clientData.fileCodes.add(message.code);
         }
       }
       if (message.type === 'unsubscribe' && message.code) {
-        const subscribedCodes = wsClients.get(ws);
-        if (subscribedCodes) {
-          subscribedCodes.delete(message.code);
+        const clientData = wsClients.get(ws);
+        if (clientData) {
+          clientData.fileCodes.delete(message.code);
+        }
+      }
+      
+      // Session 订阅相关
+      if (message.type === 'subscribe-session' && message.sessionId) {
+        const clientData = wsClients.get(ws);
+        if (clientData) {
+          clientData.sessionId = message.sessionId;
+          // 根据 browserId 生成稳定的 userId
+          clientData.userId = message.userId ? generateUserId(message.userId) : null;
+        }
+      }
+      if (message.type === 'unsubscribe-session') {
+        const clientData = wsClients.get(ws);
+        if (clientData) {
+          clientData.sessionId = null;
+        }
+      }
+      
+      // 心跳更新用户活跃时间
+      if (message.type === 'heartbeat' && message.sessionId) {
+        const clientData = wsClients.get(ws);
+        if (clientData && clientData.sessionId === message.sessionId) {
+          const session = sessionStore.get(message.sessionId);
+          if (session && clientData.userId && session.users.has(clientData.userId)) {
+            const user = session.users.get(clientData.userId);
+            if (user) {
+              user.lastSeen = Date.now();
+            }
+          }
         }
       }
     } catch (error) {
@@ -84,6 +216,30 @@ wss.on('connection', (ws) => {
   });
   
   ws.on('close', () => {
+    const clientData = wsClients.get(ws);
+    
+    // 处理用户离开 session
+    if (clientData && clientData.sessionId && clientData.userId) {
+      const session = sessionStore.get(clientData.sessionId);
+      if (session && session.users.has(clientData.userId)) {
+        session.users.delete(clientData.userId);
+        
+        // 广播用户离开
+        broadcastToSession(clientData.sessionId, {
+          type: 'user-left',
+          sessionId: clientData.sessionId,
+          userId: clientData.userId
+        });
+        
+        // 如果 session 为空，启动自动关闭计时器
+        if (session.users.size === 0) {
+          scheduleSessionClose(clientData.sessionId);
+        }
+        
+        broadcastSessionsUpdate();
+      }
+    }
+    
     wsClients.delete(ws);
     console.log('WebSocket client disconnected, total:', wsClients.size);
   });
@@ -151,7 +307,322 @@ const upload = multer({
 app.use(cors());
 app.use(express.json());
 
-// 在 production 环境下提供静态文件服务
+// ==================== 传输助手 Session API ====================
+
+// 创建 Session
+app.post('/api/transfer/session', (req, res) => {
+  const browserId = req.headers['x-browser-id'];
+  const { name } = req.body;
+  
+  const sessionId = generateSessionId();
+  // 如果没有提供房间名，使用创建者的 userId 生成 "user-xxx的房间" 格式
+  let actualName;
+  if (name) {
+    actualName = name;
+  } else if (browserId) {
+    const userId = generateUserId(browserId);
+    actualName = `${generateNicknameFromUserId(userId)}的房间`;
+  } else {
+    actualName = '新房间';
+  }
+  
+  const session = {
+    id: sessionId,
+    name: actualName,
+    createdBy: browserId,
+    createdAt: Date.now(),
+    users: new Map(),
+    messages: [],
+    closeTimer: null
+  };
+  
+  sessionStore.set(sessionId, session);
+  broadcastSessionsUpdate();
+  
+  res.json({
+    success: true,
+    sessionId,
+    session: getPublicSessionInfo(session)
+  });
+});
+
+// 获取活跃 Session 列表
+app.get('/api/transfer/sessions', (req, res) => {
+  const sessions = [];
+  
+  for (const [id, session] of sessionStore) {
+    sessions.push(getPublicSessionInfo(session));
+  }
+  
+  // 按创建时间倒序排序
+  sessions.sort((a, b) => b.createdAt - a.createdAt);
+  
+  res.json({ sessions });
+});
+
+// 获取 Session 详情
+app.get('/api/transfer/session/:id', (req, res) => {
+  const { id } = req.params;
+  const browserId = req.headers['x-browser-id'];
+  const session = sessionStore.get(id);
+  
+  if (!session) {
+    return res.status(404).json({ error: 'Session not found' });
+  }
+  
+  // 使用 hash 后的 userId 来判断 isSelf
+  const currentUserId = browserId ? generateUserId(browserId) : null;
+  res.json({
+    success: true,
+    session: getSessionDetail(session, currentUserId)
+  });
+});
+
+// 根据 userId 生成昵称（user- + userId前4位）
+function generateNicknameFromUserId(userId) {
+  return `user-${userId.substring(0, 4)}`;
+}
+
+// 根据 browserId 生成用户 ID（使用 djb2 hash，与前端保持一致）
+function generateUserId(browserId) {
+  // 简单的 djb2 hash 算法
+  let hash = 5381;
+  for (let i = 0; i < browserId.length; i++) {
+    hash = ((hash << 5) + hash) + browserId.charCodeAt(i);
+    hash = hash & hash; // Convert to 32bit integer
+  }
+  // 转换为16进制字符串，取前8位
+  const hex = Math.abs(hash).toString(16).padStart(8, '0');
+  return hex.substring(0, 8);
+}
+
+// 加入 Session
+app.post('/api/transfer/session/:id/join', (req, res) => {
+  const { id } = req.params;
+  const browserId = req.headers['x-browser-id'];
+  const { nickname } = req.body;
+  
+  if (!browserId) {
+    return res.status(400).json({ error: 'Missing browser ID' });
+  }
+  
+  // 根据 browserId 生成稳定的用户 ID
+  const userId = generateUserId(browserId);
+  
+  const session = sessionStore.get(id);
+  
+  if (!session) {
+    return res.status(404).json({ error: 'Session not found' });
+  }
+  
+  // 取消自动关闭计时器（如果有）
+  cancelSessionClose(id);
+  
+  // 检查是否已在 session 中
+  const isExistingUser = session.users.has(userId);
+  
+  // 确定昵称：如果是已存在的用户且没有传入新昵称，保留旧昵称；否则使用 userId 生成
+  let actualNickname;
+  if (isExistingUser && !nickname) {
+    actualNickname = session.users.get(userId).nickname;
+  } else if (nickname) {
+    actualNickname = nickname;
+  } else {
+    actualNickname = generateNicknameFromUserId(userId);
+  }
+  
+  // 添加/更新用户
+  session.users.set(userId, {
+    id: userId,
+    browserId: browserId, // 保存原始 browserId
+    nickname: actualNickname,
+    joinedAt: isExistingUser ? session.users.get(userId).joinedAt : Date.now(),
+    lastSeen: Date.now()
+  });
+  
+  // 广播用户加入
+  if (!isExistingUser) {
+    broadcastToSession(id, {
+      type: 'user-joined',
+      sessionId: id,
+      user: { id: userId, nickname: actualNickname }
+    });
+  }
+  
+  broadcastSessionsUpdate();
+  
+  res.json({
+    success: true,
+    session: getSessionDetail(session, userId)
+  });
+});
+
+// 离开 Session
+app.post('/api/transfer/session/:id/leave', (req, res) => {
+  const { id } = req.params;
+  const browserId = req.headers['x-browser-id'];
+  
+  if (!browserId) {
+    return res.json({ success: true });
+  }
+  
+  const userId = generateUserId(browserId);
+  const session = sessionStore.get(id);
+  
+  if (!session) {
+    return res.status(404).json({ error: 'Session not found' });
+  }
+  
+  if (session.users.has(userId)) {
+    session.users.delete(userId);
+    
+    // 广播用户离开
+    broadcastToSession(id, {
+      type: 'user-left',
+      sessionId: id,
+      userId: userId
+    });
+    
+    // 如果 session 为空，启动自动关闭计时器
+    if (session.users.size === 0) {
+      scheduleSessionClose(id);
+    }
+    
+    broadcastSessionsUpdate();
+  }
+  
+  res.json({ success: true });
+});
+
+// 发送消息
+app.post('/api/transfer/session/:id/message', (req, res) => {
+  const { id } = req.params;
+  const browserId = req.headers['x-browser-id'];
+  const { type = 'text', content, fileName, fileSize, mimeType, fileCode } = req.body;
+  
+  if (!browserId) {
+    return res.status(400).json({ error: 'Missing browser ID' });
+  }
+  
+  const userId = generateUserId(browserId);
+  const session = sessionStore.get(id);
+  
+  if (!session) {
+    return res.status(404).json({ error: 'Session not found' });
+  }
+  
+  if (!session.users.has(userId)) {
+    return res.status(403).json({ error: 'Not in session' });
+  }
+  
+  const user = session.users.get(userId);
+  const message = {
+    id: crypto.randomBytes(8).toString('hex'),
+    sessionId: id,
+    type, // 'text' | 'image' | 'file'
+    senderId: userId,
+    senderName: user.nickname,
+    content,
+    timestamp: Date.now(),
+    fileName,
+    fileSize,
+    mimeType,
+    fileCode
+  };
+  
+  session.messages.push(message);
+  
+  // 广播新消息
+  broadcastToSession(id, {
+    type: 'new-message',
+    sessionId: id,
+    message
+  });
+  
+  res.json({ success: true, message });
+});
+
+// 上传文件到 Session
+app.post('/api/transfer/session/:id/upload', upload.single('file'), (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: 'No file uploaded' });
+  }
+
+  const { id } = req.params;
+  const browserId = req.headers['x-browser-id'];
+  
+  if (!browserId) {
+    fs.unlinkSync(req.file.path);
+    return res.status(400).json({ error: 'Missing browser ID' });
+  }
+  
+  const userId = generateUserId(browserId);
+  const session = sessionStore.get(id);
+  
+  if (!session) {
+    // 清理上传的文件
+    fs.unlinkSync(req.file.path);
+    return res.status(404).json({ error: 'Session not found' });
+  }
+  
+  if (!session.users.has(userId)) {
+    fs.unlinkSync(req.file.path);
+    return res.status(403).json({ error: 'Not in session' });
+  }
+
+  // 生成文件 code
+  const fileCode = generateCode();
+  const fileInfo = {
+    code: fileCode,
+    originalName: req.file.originalname,
+    filename: req.file.filename,
+    size: req.file.size,
+    mimeType: req.file.mimetype,
+    uploads: 0,
+    maxDownloads: -1, // Session 文件不限制下载次数
+    createdAt: Date.now(),
+    expiresAt: null, // Session 文件跟随 Session 生命周期
+    ownerId: browserId,
+    sessionId: id // 关联到 session
+  };
+
+  fileStore.set(fileCode, fileInfo);
+
+  const user = session.users.get(userId);
+  
+  // 创建文件消息
+  const messageType = req.file.mimetype.startsWith('image/') ? 'image' : 'file';
+  const message = {
+    id: crypto.randomBytes(8).toString('hex'),
+    sessionId: id,
+    type: messageType,
+    senderId: userId,
+    senderName: user.nickname,
+    content: `/api/download/${fileCode}`,
+    timestamp: Date.now(),
+    fileName: req.file.originalname,
+    fileSize: req.file.size,
+    mimeType: req.file.mimetype,
+    fileCode
+  };
+  
+  session.messages.push(message);
+  
+  // 广播新消息
+  broadcastToSession(id, {
+    type: 'new-message',
+    sessionId: id,
+    message
+  });
+
+  res.json({
+    success: true,
+    fileCode,
+    message
+  });
+});
+
+// ==================== 文件分享 API ====================
 if (process.env.NODE_ENV === 'production') {
   const publicPath = path.join(__dirname, 'public');
   app.use(express.static(publicPath));

@@ -161,10 +161,15 @@ export function FileListPage() {
   return (
     <div className="container mx-auto py-8 px-4 max-w-4xl">
       <div className="flex items-center justify-between mb-8">
-        <h1 className="text-3xl font-bold">文件分享</h1>
-        <Button variant="outline" size="icon" onClick={loadFiles} disabled={loading}>
-          <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-        </Button>
+        <h1 className="text-3xl font-bold text-foreground">文件分享</h1>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={() => navigate('/transfer')}>
+            传输助手
+          </Button>
+          <Button variant="outline" size="icon" onClick={loadFiles} disabled={loading}>
+            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+          </Button>
+        </div>
       </div>
 
       {/* Search */}
@@ -200,7 +205,7 @@ export function FileListPage() {
 
       {/* File List */}
       <div className="space-y-4">
-        <h2 className="text-xl font-semibold">正在分享的文件</h2>
+        <h2 className="text-xl font-semibold text-foreground">正在分享的文件</h2>
         {loading ? (
           <p className="text-muted-foreground text-center py-8">加载中...</p>
         ) : files.length === 0 ? (

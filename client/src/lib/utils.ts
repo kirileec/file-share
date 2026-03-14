@@ -50,6 +50,25 @@ export function getBrowserId(): string {
   return browserId
 }
 
+// 根据browserId生成固定的用户ID（使用简单hash，同步版本）
+export function generateUserId(browserId: string): string {
+  // 简单的 djb2 hash 算法
+  let hash = 5381
+  for (let i = 0; i < browserId.length; i++) {
+    hash = ((hash << 5) + hash) + browserId.charCodeAt(i)
+    hash = hash & hash // Convert to 32bit integer
+  }
+  // 转换为16进制字符串，取前8位
+  const hex = Math.abs(hash).toString(16).padStart(8, '0')
+  return hex.substring(0, 8)
+}
+
+export function isMobile(): boolean {
+  if (typeof window === 'undefined') return false
+  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+    window.innerWidth < 768
+}
+
 export function getFileIcon(mimeType: string): string {
   if (mimeType.startsWith('image/')) return 'image'
   if (mimeType.startsWith('video/')) return 'video'

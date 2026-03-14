@@ -1,5 +1,5 @@
 # Stage 1: Build the client
-FROM node:20-alpine AS client-builder
+FROM node:22-alpine AS client-builder
 
 WORKDIR /app/client
 
@@ -10,7 +10,7 @@ COPY client/ ./
 RUN npm run build
 
 # Stage 2: Final image with server and built client
-FROM node:20-alpine
+FROM node:22-alpine
 
 # Set timezone to Asia/Shanghai
 RUN apk add --no-cache tzdata && \
@@ -33,7 +33,7 @@ COPY --from=client-builder /app/client/dist ./public
 RUN mkdir -p uploads
 
 # Expose port
-EXPOSE 3001
+EXPOSE 8989
 
 # Set environment
 ENV NODE_ENV=production
