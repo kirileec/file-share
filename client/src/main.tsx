@@ -12,7 +12,7 @@ import VConsole from 'vconsole'
 
 // 在开发环境或移动端启用 vConsole
 const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
-if (import.meta.env.DEV || isMobile) {
+if (import.meta.env.DEV && isMobile) {
   new VConsole()
 }
 

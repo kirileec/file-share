@@ -361,7 +361,7 @@ export function TransferRoomPage() {
 
   if (loading) {
     return (
-      <div className="h-screen bg-gradient-to-br from-background via-card to-background flex items-center justify-center">
+      <div className="h-screen bg-linear-to-br from-background via-card to-background flex items-center justify-center">
         <div className="text-foreground">加载中...</div>
       </div>
     )
@@ -369,7 +369,7 @@ export function TransferRoomPage() {
 
   if (error) {
     return (
-      <div className="h-screen bg-gradient-to-br from-background via-card to-background flex items-center justify-center">
+      <div className="h-screen bg-linear-to-br from-background via-card to-background flex items-center justify-center">
         <Card>
           <CardContent className="py-8 px-12 text-center">
             <p className="text-destructive mb-4">{error}</p>
@@ -387,9 +387,9 @@ export function TransferRoomPage() {
   }
 
   return (
-    <div className="h-screen bg-gradient-to-br from-background via-card to-background flex flex-col overflow-hidden">
+    <div className="h-screen bg-linear-to-br from-background via-card to-background flex flex-col overflow-hidden">
       {/* Header - Fixed at top */}
-      <div className="bg-background/80 backdrop-blur-sm border-b px-4 py-3 flex items-center justify-between flex-shrink-0 sticky top-0 z-10">
+      <div className="bg-background/80 backdrop-blur-sm border-b px-4 py-3 flex items-center justify-between shrink-0 sticky top-0 z-10">
         <div className="flex items-center gap-3">
           <Button 
             variant="ghost" 
@@ -484,7 +484,7 @@ export function TransferRoomPage() {
           </div>
 
           {/* Input Area - Fixed at bottom */}
-          <div className="border-t bg-card p-3 flex-shrink-0">
+          <div className="border-t bg-card p-3 shrink-0">
             {uploading && (
               <div className="mb-2">
                 <div className="h-1 bg-muted rounded-full overflow-hidden">
@@ -508,7 +508,7 @@ export function TransferRoomPage() {
                 size="icon"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={uploading}
-                className="flex-shrink-0"
+                className="shrink-0"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
@@ -520,7 +520,7 @@ export function TransferRoomPage() {
                 onChange={(e) => setMessageInput(e.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder={isMobile() ? "输入消息... (支持Markdown)" : "输入消息... (Enter发送, Shift+Enter换行, 支持Markdown)"}
-                className="flex-1 min-h-[40px] max-h-32 resize-none rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                className="flex-1 min-h-10 max-h-32 resize-none rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                 disabled={sending}
                 rows={1}
                 onInput={(e) => {
@@ -532,7 +532,7 @@ export function TransferRoomPage() {
               <Button
                 onClick={handleSendMessage}
                 disabled={!messageInput.trim() || sending}
-                className="flex-shrink-0"
+                className="shrink-0"
               >
                 发送
               </Button>
@@ -541,7 +541,7 @@ export function TransferRoomPage() {
         </div>
 
         {/* Users Sidebar (Desktop) */}
-        <div className="w-48 bg-sidebar border-l p-4 hidden md:block flex-shrink-0">
+        <div className="w-48 bg-sidebar border-l p-4 hidden md:block shrink-0">
           <h3 className="text-sm font-medium mb-3 text-sidebar-foreground">在线用户</h3>
           <div className="space-y-2">
             {session.users.map(user => {
