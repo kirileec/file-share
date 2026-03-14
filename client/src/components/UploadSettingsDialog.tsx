@@ -31,11 +31,14 @@ const EXPIRE_OPTIONS = [
   { label: '30分钟', value: '1800' },
   { label: '1小时', value: '3600' },
   { label: '3小时', value: '10800' },
+  { label: '无限制', value: 'unlimited' },
 ];
 
 const DOWNLOAD_OPTIONS = [
   { label: '1次', value: '1' },
   { label: '3次', value: '3' },
+  { label: '5次', value: '5' },
+  { label: '10次', value: '10' },
   { label: '无限制', value: 'unlimited' },
 ];
 

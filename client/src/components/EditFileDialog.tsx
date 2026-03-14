@@ -29,11 +29,14 @@ const EXPIRE_OPTIONS = [
   { label: '30分钟', value: '1800' },
   { label: '1小时', value: '3600' },
   { label: '3小时', value: '10800' },
+  { label: '无限制', value: 'unlimited' },
 ];
 
 const DOWNLOAD_OPTIONS = [
   { label: '1次', value: '1' },
   { label: '3次', value: '3' },
+  { label: '5次', value: '5' },
+  { label: '10次', value: '10' },
   { label: '无限制', value: 'unlimited' },
 ];
 
@@ -44,16 +47,21 @@ export function EditFileDialog({ open, onClose, fileInfo, onSuccess }: EditFileD
 
   useEffect(() => {
     if (fileInfo) {
-      // 计算原始设置的总过期时间（从创建时算起）
-      const totalSeconds = Math.floor((fileInfo.expiresAt - fileInfo.createdAt) / 1000);
-      
-      // 找到最接近的选项
-      const optionValues = EXPIRE_OPTIONS.map(o => parseInt(o.value));
-      const closestOption = optionValues.reduce((prev, curr) => 
-        Math.abs(curr - totalSeconds) < Math.abs(prev - totalSeconds) ? curr : prev
-      );
-      
-      setExpiresIn(closestOption.toString());
+      // 如果没有过期时间，说明是无限制
+      if (!fileInfo.expiresAt) {
+        setExpiresIn('unlimited');
+      } else {
+        // 计算原始设置的总过期时间（从创建时算起）
+        const totalSeconds = Math.floor((fileInfo.expiresAt - fileInfo.createdAt) / 1000);
+        
+        // 找到最接近的选项
+        const optionValues = EXPIRE_OPTIONS.filter(o => o.value !== 'unlimited').map(o => parseInt(o.value));
+        const closestOption = optionValues.reduce((prev, curr) => 
+          Math.abs(curr - totalSeconds) < Math.abs(prev - totalSeconds) ? curr : prev
+        );
+        
+        setExpiresIn(closestOption.toString());
+      }
       setMaxDownloads(fileInfo.maxDownloads === -1 ? 'unlimited' : fileInfo.maxDownloads.toString());
     }
   }, [fileInfo]);
@@ -64,7 +72,7 @@ export function EditFileDialog({ open, onClose, fileInfo, onSuccess }: EditFileD
     setLoading(true);
     try {
       await updateFile(fileInfo.code, {
-        expiresIn: parseInt(expiresIn),
+        expiresIn: expiresIn === 'unlimited' ? 'unlimited' : parseInt(expiresIn),
         maxDownloads: maxDownloads as 'unlimited' | number
       });
       onSuccess();

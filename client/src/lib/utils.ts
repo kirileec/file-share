@@ -17,7 +17,9 @@ export function formatDate(timestamp: number): string {
   return new Date(timestamp).toLocaleString('zh-CN')
 }
 
-export function formatTimeRemaining(expiresAt: number): string {
+export function formatTimeRemaining(expiresAt: number | null): string {
+  if (!expiresAt) return '无限制'
+  
   const now = Date.now()
   const diff = expiresAt - now
   

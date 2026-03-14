@@ -4,6 +4,7 @@ import {
   ArrowLeft, 
   Download, 
   QrCode,
+  Trash2,
   FileText,
   Image,
   Video,
@@ -11,13 +12,15 @@ import {
   File,
   Archive,
   FileSpreadsheet,
-  AlertCircle
+  AlertCircle,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { QRCodeDialog } from '@/components/QRCodeDialog';
-import { getFile, getPreviewUrl, createWebSocketConnection, subscribeToFile, unsubscribeFromFile, downloadFile } from '@/lib/api';
+import { getFile, getPreviewUrl, createWebSocketConnection, subscribeToFile, unsubscribeFromFile, downloadFile, deleteFile, getTextContent, isTextFile, TEXT_PREVIEW_MAX_SIZE } from '@/lib/api';
 import type { FileInfo, WebSocketMessage } from '@/lib/api';
 import { formatFileSize, formatDate, formatTimeRemaining, getFileIcon } from '@/lib/utils';
 
@@ -51,6 +54,11 @@ export function FileInfoPage() {
   const [error, setError] = useState<string | null>(null);
   const [qrCodeOpen, setQrCodeOpen] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
+  
+  // 文本预览相关状态
+  const [textContent, setTextContent] = useState<string | null>(null);
+  const [textLoading, setTextLoading] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
 
   const loadFile = useCallback(async () => {
     if (!code) return;
@@ -104,6 +112,26 @@ export function FileInfoPage() {
     };
   }, [code, loadFile]);
 
+  // 判断是否可以预览文本
+  const canPreviewText = fileInfo && isTextFile(fileInfo.mimeType, fileInfo.originalName) && fileInfo.size <= TEXT_PREVIEW_MAX_SIZE;
+
+  // 加载文本内容
+  const loadTextContent = useCallback(async () => {
+    if (!code || !canPreviewText) return;
+    
+    setTextLoading(true);
+    try {
+      const result = await getTextContent(code);
+      setTextContent(result.content);
+      setShowPreview(true);
+    } catch (err) {
+      console.error('Failed to load text content:', err);
+      setTextContent(null);
+    } finally {
+      setTextLoading(false);
+    }
+  }, [code, canPreviewText]);
+
   const handleDownload = async () => {
     if (code) {
       try {
@@ -111,6 +139,21 @@ export function FileInfoPage() {
       } catch (err) {
         alert(err instanceof Error ? err.message : '下载失败');
       }
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!code) return;
+    
+    if (!confirm('确定要删除此文件吗？此操作不可恢复。')) {
+      return;
+    }
+    
+    try {
+      await deleteFile(code);
+      navigate('/');
+    } catch (err) {
+      alert(err instanceof Error ? err.message : '删除失败');
     }
   };
 
@@ -166,6 +209,44 @@ export function FileInfoPage() {
                   className="max-h-64 object-contain"
                 />
               </div>
+            ) : canPreviewText ? (
+              <div className="w-full">
+                {/* 文本预览区域 */}
+                <div className="flex items-center justify-center mb-4">
+                  {getFileIconComponent(fileInfo.mimeType)}
+                </div>
+                
+                {showPreview && textContent !== null ? (
+                  <div className="relative">
+                    <pre className="bg-muted p-4 rounded-lg overflow-auto max-h-80 text-sm whitespace-pre-wrap break-all font-mono">
+                      {textContent}
+                    </pre>
+                    <Button 
+                      variant="secondary" 
+                      size="sm"
+                      className="mt-2"
+                      onClick={() => setShowPreview(false)}
+                    >
+                      <EyeOff className="h-4 w-4 mr-1" />
+                      收起预览
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="text-center">
+                    <Button 
+                      variant="outline" 
+                      onClick={loadTextContent}
+                      disabled={textLoading}
+                    >
+                      <Eye className="h-4 w-4 mr-2" />
+                      {textLoading ? '加载中...' : '预览文本内容'}
+                    </Button>
+                    <p className="text-xs text-muted-foreground mt-2">
+                      文件大小: {formatFileSize(fileInfo.size)}
+                    </p>
+                  </div>
+                )}
+              </div>
             ) : (
               getFileIconComponent(fileInfo.mimeType)
             )}
@@ -208,11 +289,18 @@ export function FileInfoPage() {
                 下载文件
               </Button>
               {fileInfo.isOwner ? (
-                <div className="flex items-center gap-2">
+                <>
+                  <Button 
+                    variant="destructive" 
+                    onClick={handleDelete}
+                    title="删除文件"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
                   <div className="p-2 bg-white rounded-lg border">
                     <QRCodeSVG value={`${window.location.origin}/?code=${code}`} size={80} />
                   </div>
-                </div>
+                </>
               ) : (
                 <Button variant="outline" onClick={() => setQrCodeOpen(true)}>
                   <QrCode className="h-4 w-4 mr-2" />

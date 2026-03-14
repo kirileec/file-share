@@ -11,7 +11,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const PORT = 3001;
+const PORT = process.env.PORT || 3001;
 const server = createServer(app);
 const wss = new WebSocketServer({ server });
 
@@ -135,6 +135,8 @@ const storage = multer.diskStorage({
     cb(null, path.join(__dirname, 'uploads'));
   },
   filename: (req, file, cb) => {
+    // 修复中文文件名乱码：将 latin1 转换为 utf-8
+    file.originalname = Buffer.from(file.originalname, 'latin1').toString('utf8');
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
     const ext = path.extname(file.originalname);
     cb(null, uniqueSuffix + ext);
@@ -182,7 +184,7 @@ app.post('/api/upload', upload.single('file'), (req, res) => {
     uploads: 0,
     maxDownloads: maxDownloads === 'unlimited' ? -1 : parseInt(maxDownloads),
     createdAt: Date.now(),
-    expiresAt: Date.now() + parseInt(expiresIn) * 1000,
+    expiresAt: expiresIn === 'unlimited' ? null : Date.now() + parseInt(expiresIn) * 1000,
     ownerId: req.headers['x-browser-id'] || generateOwnerId()
   };
 
@@ -206,7 +208,8 @@ app.get('/api/files', (req, res) => {
   
   for (const [code, fileInfo] of fileStore) {
     const now = Date.now();
-    if (fileInfo.expiresAt && now <= fileInfo.expiresAt) {
+    // 没有过期时间（无限制）或未过期
+    if (!fileInfo.expiresAt || now <= fileInfo.expiresAt) {
       const isOwner = fileInfo.ownerId === browserId;
       files.push({
         ...getPublicFileInfo(fileInfo),
@@ -287,9 +290,9 @@ app.get('/api/download/:code', (req, res) => {
   const shouldCountDownload = !isOwner && !(isPreview && isImageFile);
   
   if (shouldCountDownload && fileInfo.maxDownloads > 0 && fileInfo.uploads >= fileInfo.maxDownloads) {
-    // 下载次数耗完，设置过期时间为1分钟后（如果当前过期时间大于1分钟）
+    // 下载次数耗完，设置过期时间为1分钟后（如果当前过期时间大于1分钟或无限制）
     const oneMinuteLater = Date.now() + 60 * 1000;
-    if (fileInfo.expiresAt > oneMinuteLater) {
+    if (!fileInfo.expiresAt || fileInfo.expiresAt > oneMinuteLater) {
       fileInfo.expiresAt = oneMinuteLater;
       fileStore.set(code, fileInfo);
       // 广播文件列表更新和特定文件更新
@@ -308,7 +311,11 @@ app.get('/api/download/:code', (req, res) => {
     broadcastFileUpdate(code, fileInfo);
   }
 
-  res.download(filePath, fileInfo.originalName);
+  // 使用 RFC 5987 编码处理中文文件名
+  const encodedFilename = encodeURIComponent(fileInfo.originalName);
+  res.setHeader('Content-Type', fileInfo.mimeType);
+  res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodedFilename}`);
+  res.sendFile(filePath);
 });
 
 // 更新文件设置
@@ -328,7 +335,7 @@ app.put('/api/file/:code', (req, res) => {
   }
 
   if (expiresIn !== undefined) {
-    fileInfo.expiresAt = fileInfo.createdAt + parseInt(expiresIn) * 1000;
+    fileInfo.expiresAt = expiresIn === 'unlimited' ? null : fileInfo.createdAt + parseInt(expiresIn) * 1000;
   }
   
   if (maxDownloads !== undefined) {
@@ -383,6 +390,139 @@ function getPublicFileInfo(fileInfo) {
     expiresAt: fileInfo.expiresAt
   };
 }
+
+// 辅助函数：判断是否为文本文件
+function isTextFile(mimeType, originalName) {
+  // 检查 MIME 类型
+  const textMimeTypes = [
+    'text/plain',
+    'text/markdown',
+    'text/html',
+    'text/css',
+    'text/javascript',
+    'application/json',
+    'application/javascript',
+    'application/xml',
+    'text/xml',
+    'text/csv'
+  ];
+  
+  if (textMimeTypes.some(type => mimeType.includes(type))) {
+    return true;
+  }
+  
+  // 检查文件扩展名
+  const textExtensions = ['.txt', '.md', '.markdown', '.json', '.js', '.ts', '.jsx', '.tsx', 
+    '.html', '.htm', '.css', '.scss', '.sass', '.less', '.xml', '.yaml', '.yml', 
+    '.csv', '.log', '.ini', '.cfg', '.conf', '.sh', '.bash', '.zsh', '.py', 
+    '.java', '.c', '.cpp', '.h', '.hpp', '.cs', '.go', '.rs', '.rb', '.php', 
+    '.sql', '.vue', '.svelte'];
+  
+  const ext = path.extname(originalName).toLowerCase();
+  return textExtensions.includes(ext);
+}
+
+// 文本文件预览大小限制（100KB）
+const TEXT_PREVIEW_MAX_SIZE = 100 * 1024;
+
+// 获取文本文件内容（预览）
+app.get('/api/text/:code', (req, res) => {
+  const { code } = req.params;
+  const fileInfo = fileStore.get(code);
+
+  if (!fileInfo) {
+    return res.status(404).json({ error: 'File not found' });
+  }
+
+  const now = Date.now();
+  if (fileInfo.expiresAt && now > fileInfo.expiresAt) {
+    const filePath = path.join(__dirname, 'uploads', fileInfo.filename);
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+    }
+    fileStore.delete(code);
+    return res.status(410).json({ error: 'File has expired' });
+  }
+
+  // 检查是否为文本文件
+  if (!isTextFile(fileInfo.mimeType, fileInfo.originalName)) {
+    return res.status(400).json({ error: 'Not a text file' });
+  }
+
+  // 检查文件大小
+  if (fileInfo.size > TEXT_PREVIEW_MAX_SIZE) {
+    return res.status(413).json({ error: 'File too large for preview (max 100KB)' });
+  }
+
+  const filePath = path.join(__dirname, 'uploads', fileInfo.filename);
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).json({ error: 'File not found on disk' });
+  }
+
+  try {
+    const content = fs.readFileSync(filePath, 'utf-8');
+    res.json({ 
+      content, 
+      mimeType: fileInfo.mimeType,
+      originalName: fileInfo.originalName
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to read file' });
+  }
+});
+
+// 生成随机文件名（6-8位字母，大小写随机）
+function generateRandomFilename() {
+  const length = Math.floor(Math.random() * 3) + 6; // 6-8位
+  const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  let result = '';
+  for (let i = 0; i < length; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
+}
+
+// 创建文本文件
+app.post('/api/text', express.raw({ type: 'text/plain', limit: '100kb' }), (req, res) => {
+  const content = req.body.toString('utf-8');
+  const defaultFilename = generateRandomFilename() + '.txt';
+  const { expiresIn = 3600, maxDownloads = 1, filename = defaultFilename } = req.query;
+  
+  if (!content || content.trim().length === 0) {
+    return res.status(400).json({ error: 'Content is empty' });
+  }
+
+  const code = generateCode();
+  const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+  const safeFilename = uniqueSuffix + '.txt';
+  const filePath = path.join(__dirname, 'uploads', safeFilename);
+  
+  // 写入文件
+  fs.writeFileSync(filePath, content, 'utf-8');
+  
+  const fileInfo = {
+    code,
+    originalName: filename.endsWith('.txt') ? filename : filename + '.txt',
+    filename: safeFilename,
+    size: Buffer.byteLength(content, 'utf-8'),
+    mimeType: 'text/plain',
+    uploads: 0,
+    maxDownloads: maxDownloads === 'unlimited' ? -1 : parseInt(maxDownloads),
+    createdAt: Date.now(),
+    expiresAt: Date.now() + parseInt(expiresIn) * 1000,
+    ownerId: req.headers['x-browser-id'] || generateOwnerId()
+  };
+
+  fileStore.set(code, fileInfo);
+  broadcastFilesUpdate();
+
+  res.json({
+    success: true,
+    code,
+    ownerId: fileInfo.ownerId,
+    fileInfo: getPublicFileInfo(fileInfo)
+  });
+});
 
 // 生成所有者ID
 function generateOwnerId() {

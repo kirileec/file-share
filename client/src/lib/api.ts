@@ -10,7 +10,7 @@ export interface FileInfo {
   uploads: number;
   maxDownloads: number;
   createdAt: number;
-  expiresAt: number;
+  expiresAt: number | null;
   isOwner?: boolean;
 }
 
@@ -113,7 +113,7 @@ export async function getFile(code: string): Promise<{ fileInfo: FileInfo }> {
 
 export async function updateFile(
   code: string,
-  data: { expiresIn?: number; maxDownloads?: number | 'unlimited' }
+  data: { expiresIn?: number | 'unlimited'; maxDownloads?: number | 'unlimited' }
 ): Promise<{ success: boolean; fileInfo: FileInfo }> {
   const response = await fetch(`${API_BASE}/file/${code}`, {
     method: 'PUT',
@@ -168,7 +168,25 @@ export async function downloadFile(code: string): Promise<void> {
   const url = window.URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = response.headers.get('content-disposition')?.split('filename=')[1]?.replace(/"/g, '') || 'download';
+  
+  // 解析 Content-Disposition 头获取文件名
+  const contentDisposition = response.headers.get('content-disposition');
+  let filename = 'download';
+  if (contentDisposition) {
+    // 优先解析 RFC 5987 格式: filename*=UTF-8''encoded_filename
+    const utf8Match = contentDisposition.match(/filename\*=UTF-8''(.+?)(?:;|$)/i);
+    if (utf8Match) {
+      filename = decodeURIComponent(utf8Match[1]);
+    } else {
+      // 兼容旧格式: filename="filename" 或 filename=filename
+      const asciiMatch = contentDisposition.match(/filename="?([^";]+)"?/i);
+      if (asciiMatch) {
+        filename = asciiMatch[1];
+      }
+    }
+  }
+  
+  a.download = filename;
   document.body.appendChild(a);
   a.click();
   window.URL.revokeObjectURL(url);
@@ -231,4 +249,76 @@ export function unsubscribeFromFile(ws: WebSocket, code: string) {
   if (ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({ type: 'unsubscribe', code }));
   }
+}
+
+// 文本文件最大预览大小（100KB）
+export const TEXT_PREVIEW_MAX_SIZE = 100 * 1024;
+
+// 判断是否为文本文件
+export function isTextFile(mimeType: string, originalName: string): boolean {
+  const textMimeTypes = [
+    'text/plain', 'text/markdown', 'text/html', 'text/css', 'text/javascript',
+    'application/json', 'application/javascript', 'application/xml', 'text/xml', 'text/csv'
+  ];
+  
+  if (textMimeTypes.some(type => mimeType.includes(type))) {
+    return true;
+  }
+  
+  const textExtensions = ['.txt', '.md', '.markdown', '.json', '.js', '.ts', '.jsx', '.tsx',
+    '.html', '.htm', '.css', '.scss', '.sass', '.less', '.xml', '.yaml', '.yml',
+    '.csv', '.log', '.ini', '.cfg', '.conf', '.sh', '.bash', '.zsh', '.py',
+    '.java', '.c', '.cpp', '.h', '.hpp', '.cs', '.go', '.rs', '.rb', '.php',
+    '.sql', '.vue', '.svelte'];
+  
+  const ext = originalName.substring(originalName.lastIndexOf('.')).toLowerCase();
+  return textExtensions.includes(ext);
+}
+
+// 获取文本文件内容
+export async function getTextContent(code: string): Promise<{
+  content: string;
+  mimeType: string;
+  originalName: string;
+}> {
+  const response = await fetch(`${API_BASE}/text/${code}`, {
+    headers: {
+      'x-browser-id': getBrowserId()
+    }
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to get text content');
+  }
+  return response.json();
+}
+
+// 创建文本文件
+export async function createTextFile(
+  content: string,
+  filename: string,
+  expiresIn: number,
+  maxDownloads: number | 'unlimited'
+): Promise<UploadResponse> {
+  const params = new URLSearchParams({
+    filename,
+    expiresIn: expiresIn.toString(),
+    maxDownloads: maxDownloads.toString()
+  });
+  
+  const response = await fetch(`${API_BASE}/text?${params}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'text/plain',
+      'x-browser-id': getBrowserId()
+    },
+    body: content
+  });
+  
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to create text file');
+  }
+  
+  return response.json();
 }

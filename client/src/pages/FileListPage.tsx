@@ -8,7 +8,8 @@ import { FileCard } from '@/components/FileCard';
 import { QRCodeDialog } from '@/components/QRCodeDialog';
 import { EditFileDialog } from '@/components/EditFileDialog';
 import { UploadSettingsDialog } from '@/components/UploadSettingsDialog';
-import { getFiles, uploadFile, deleteFile, updateFile, createWebSocketConnection, downloadFile } from '@/lib/api';
+import { TextCreateZone } from '@/components/TextCreateZone';
+import { getFiles, uploadFile, deleteFile, updateFile, createWebSocketConnection, downloadFile, createTextFile } from '@/lib/api';
 import type { FileInfo, UploadProgress } from '@/lib/api';
 
 export function FileListPage() {
@@ -19,6 +20,7 @@ export function FileListPage() {
   const [loading, setLoading] = useState(true);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<UploadProgress | null>(null);
+  const [isCreatingText, setIsCreatingText] = useState(false);
   
   // Dialog states
   const [qrCodeOpen, setQrCodeOpen] = useState(false);
@@ -104,6 +106,21 @@ export function FileListPage() {
     }
   };
 
+  const handleCreateText = async (content: string, filename: string) => {
+    setIsCreatingText(true);
+    try {
+      const response = await createTextFile(content, filename, 3600, 1);
+      setUploadedCode(response.code);
+      setUploadSettingsOpen(true);
+      await loadFiles();
+    } catch (error) {
+      console.error('Failed to create text file:', error);
+      alert('创建文件失败');
+    } finally {
+      setIsCreatingText(false);
+    }
+  };
+
   const handleView = (code: string) => {
     navigate(`/file/${code}`);
   };
@@ -170,6 +187,14 @@ export function FileListPage() {
           onUpload={handleUpload}
           isUploading={isUploading}
           uploadProgress={uploadProgress ? { percentage: uploadProgress.percentage, speed: uploadProgress.speed } : undefined}
+        />
+      </div>
+
+      {/* Text Create Zone */}
+      <div className="mb-8">
+        <TextCreateZone
+          onCreateText={handleCreateText}
+          isCreating={isCreatingText}
         />
       </div>
 
